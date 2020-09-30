@@ -5,6 +5,30 @@
  ADR-TTN
  Author: Gabriel Germino Martins de Jesus <gabrielgmj3@gmail.com>
 """
+
+"""
+ SYNOPSIS:
+   ./confirmablelorawan.py <nodes> <avgsend> <datasize> <collision> <randomseed>
+ DESCRIPTION:
+    nodes
+        number of nodes to simulate
+    avgsend
+        average sending interval in seconds
+    datasize
+        Size of data that each device sends in bytes
+    collision
+        0   simplified check. Two packets collide when they arrive at the same time, on the same frequency and SF
+        1   considers the capture effect
+        2   consider the Non-orthognality SFs effect and capture effect
+    randomseed
+        random seed
+ OUTPUT
+    The result of every simulation run will be appended to a file named expX.dat,
+    whereby X is the experiment number. The file contains a space separated table
+    of values for nodes, collisions, transmissions and total energy spent. The
+    data file can be easily plotted using e.g. gnuplot.
+"""
+
 import simpy
 import random
 import numpy as np
@@ -319,7 +343,7 @@ class myNode():
         self.rxtime = 0
         self.x = 0
         self.y = 0
-
+        self.last_rssi_at_BS = []
         # this is very complex prodecure for placing nodes
         # and ensure minimum distance between each pair of nodes
         found = 0
@@ -402,15 +426,15 @@ class assignParameters():
         # SF, BW, CR and PWR distributions
         print "bw", self.bw, "sf", self.sf, "cr", self.cr
         global SFdistribution, CRdistribution, TXdistribution, BWdistribution
-        SFdistribution[self.sf-7]+=1;
-        CRdistribution[self.cr-1]+=1;
-        TXdistribution[int(self.txpow)-2]+=1;
+        SFdistribution[self.sf-7]+=1
+        CRdistribution[self.cr-1]+=1
+        TXdistribution[int(self.txpow)-2]+=1
         if self.bw==125:
-            BWdistribution[0]+=1;
+            BWdistribution[0]+=1
         elif self.bw==250:
-            BWdistribution[1]+=1;
+            BWdistribution[1]+=1
         else:
-            BWdistribution[2]+=1;
+            BWdistribution[2]+=1
 
 #
 # this function creates a packet (associated with a node)
@@ -452,14 +476,26 @@ class myPacket():
         self.acked = 0
         self.acklost = 0
 
+
+def registerLastRSSIofPacket(node):
+    #
+    # This registers the RSSI of the last received packet 
+    # to further calculate ADR
+    #
+    node.last_rssi_at_BS.append(node.packet.rssi)
+    while len(node.last_rssi_at_BS) > 20:
+        node.last_rssi_at_BS.pop(0)
+
 #
 # main discrete event loop, runs for each node
 # a global list of packet being processed at the gateway
 # is maintained
 #
+
 def transmit(env,node):
     while node.buffer > 0.0:
         node.packet.rssi = node.packet.txpow - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)
+        registerLastRSSIofPacket(node)
         # add maximum number of retransmissions
         if (node.lstretans and node.lstretans <= 8):
             node.first = 0
@@ -725,9 +761,10 @@ myfile.close()
 # this can be done to keep graphics visible
 if (graphics == 1):
     raw_input('Press Enter to continue ...')
-
+#print nodes[0].last_rssi_at_BS == nodes[1].last_rssi_at_BS
 # with open('nodes.txt','w') as nfile:
 #     for n in nodes:
 #         nfile.write("{} {} {}\n".format(n.x, n.y, n.nodeid))
 # with open('basestation.txt', 'w') as bfile:
 #     bfile.write("{} {} {}\n".format(bsx, bsy, 0)
+print nodes[0].last_rssi_at_BS
