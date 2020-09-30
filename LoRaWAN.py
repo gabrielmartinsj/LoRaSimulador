@@ -68,7 +68,7 @@ IS12 = np.array([-25,-25,-25,-24,-23,1])
 IsoThresholds = np.array([IS7,IS8,IS9,IS10,IS11,IS12])
 
 # Bandwidth
-Bandwidth = 500
+Bandwidth = 125
 # Coding Rate
 CodingRate = 1
 # packet size per SFs
@@ -78,8 +78,10 @@ LorawanHeader = 7
 nearstACK1p = [0,0,0] # 3 channels with 1% duty cycle
 nearstACK10p = 0 # one channel with 10% duty cycle
 AckMessLen = 0
-global ADR
+#global ADR
 ADR = True
+#global ADRtype
+ADRtype = "ADR-TTN"
 #
 # packet error model assumming independent Bernoulli
 #
@@ -347,6 +349,8 @@ class myNode():
         self.last_rssi_at_BS = []
         self.nextsf = 12
         self.nexttxpow = 14
+        self.margin_db = 10
+        self.Nstep = []
         # this is very complex prodecure for placing nodes
         # and ensure minimum distance between each pair of nodes
         found = 0
@@ -398,7 +402,7 @@ class assignParameters():
         global GL
 
         self.nodeid = nodeid
-        self.txpow = 14
+        self.txpow = 2
         self.bw = Bandwidth
         self.cr = CodingRate
         self.sf = 12
@@ -425,7 +429,7 @@ class assignParameters():
         if (minsf != 0):
             self.rectime = minairtime
             self.sf = minsf
-
+        self.sf = 12
         # SF, BW, CR and PWR distributions
         print "bw", self.bw, "sf", self.sf, "cr", self.cr
         global SFdistribution, CRdistribution, TXdistribution, BWdistribution
@@ -479,15 +483,48 @@ class myPacket():
         self.acked = 0
         self.acklost = 0
 
+#def calculateADRatED(node):
+#    if node.counter > 64:
+#        if node.nexttxpow < 14:
+#            node.nexttxpow 
 
-def registerLastRSSIofPacket(node):
-    #
-    # This registers the RSSI of the last received packet 
-    # to further calculate ADR
-    #
+def calculateADRatNS(node):
+    #registerLastRSSIofPacket(node)
     node.last_rssi_at_BS.append(node.packet.rssi)
-    while len(node.last_rssi_at_BS) > 20:
-        node.last_rssi_at_BS.pop(0)
+    if len(node.last_rssi_at_BS) == 20:
+
+        if ADRtype == "ADR-TTN":
+            SNRm = sum(node.last_rssi_at_BS)/len(node.last_rssi_at_BS)
+            margin_db = node.margin_db
+            radio_sensitivity = sensi[node.packet.sf - 7, [125,250,500].index(node.packet.bw) + 1]
+            Nstep = int((SNRm - margin_db - radio_sensitivity)/3)
+
+            #node.NstepCalc.append(Nstep)
+
+            node.nexttxpow = node.packet.txpow
+            node.nextsf = node.packet.sf
+            #node.Nstep.append([node.nextsf, node.nexttxpow])
+
+            if Nstep < 0:
+                while(node.nexttxpow < 14 and Nstep < 0):
+                    node.nexttxpow += 2
+                    Nstep += 1
+            elif Nstep > 0:
+                while(node.nextsf > 7 and Nstep > 0):
+                    node.nextsf -= 1
+                    Nstep -= 1
+                while(node.nexttxpow > 2 and Nstep > 0):
+                    node.nexttxpow -= 2
+                    Nstep -= 1
+            else:
+                node.nexttxpow = node.packet.txpow
+                node.nextsf = node.packet.sf
+
+        node.last_rssi_at_BS = []
+
+    else:
+        node.nextsf = node.packet.sf
+        node.nexttxpow = node.packet.txpow
 
 #
 # main discrete event loop, runs for each node
@@ -495,13 +532,10 @@ def registerLastRSSIofPacket(node):
 # is maintained
 #
 
-
-
 def transmit(env,node):
     while node.buffer > 0.0:
         node.packet.rssi = node.packet.txpow - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)
-        registerLastRSSIofPacket(node)
-        # add maximum number of retransmissions
+
         if (node.lstretans and node.lstretans <= 8):
             node.first = 0
             node.buffer += PcktLength_SF[node.parameters.sf-7]
@@ -521,9 +555,6 @@ def transmit(env,node):
         if (node in packetsAtBS):
             print "ERROR: packet already in"
         else:
-            if ADR:
-                node.packet.sf = node.nextsf
-                node.packet.txpow = node.nexttxpow
             #SF_in_use[node.packet.sf] += 1
             sensitivity = sensi[node.packet.sf - 7, [125,250,500].index(node.packet.bw) + 1]
             if node.packet.rssi < sensitivity:
@@ -561,9 +592,17 @@ def transmit(env,node):
             else:
             # ack is lost
                 node.packet.acklost = 1
+            if ADR:
+                #node.packet.sf = node.nextsf
+                #node.packet.txpow = node.nexttxpow
+                calculateADRatNS(node)
+                #calculateADRatED(node)
+                #TXdistribution[int(node.packet.txpow)-2]+=1
+                #SFdistribution[node.packet.sf-7]+=1
         else:
             node.packet.acked = 0
-
+            #calculateADRatED(node)
+        
         if node.packet.processed == 1:
             global nrProcessed
             nrProcessed = nrProcessed + 1
@@ -616,9 +655,10 @@ def transmit(env,node):
         node.packet.lost = False
         node.packet.acked = 0
         node.packet.acklost = 0
-        if ADR:
-            node.nextsf = 12
-            node.nexttxpow = 14
+        #if ADR:
+        #    node.nextsf = 12
+        #    node.nexttxpow = 14
+        calculateADRatNS(node)
 
 #
 # "main" program
@@ -772,6 +812,8 @@ print newres
 with open(fname, "a") as myfile:
     myfile.write(newres)
 myfile.close()
+#for node in nodes:
+#    print(node.Nstep)
 
 # this can be done to keep graphics visible
 if (graphics == 1):
@@ -782,4 +824,3 @@ if (graphics == 1):
 #         nfile.write("{} {} {}\n".format(n.x, n.y, n.nodeid))
 # with open('basestation.txt', 'w') as bfile:
 #     bfile.write("{} {} {}\n".format(bsx, bsy, 0)
-print(SF_in_use)
