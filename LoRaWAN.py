@@ -23,8 +23,10 @@
     randomseed
         random seed
  OUTPUT
-    Files with information on the number of performed uplinks (with the SF and Tx used) and downlinks (with the
-    respective receiving window) for each node timestamped
+    The result of every simulation run will be appended to a file named expX.dat,
+    whereby X is the experiment number. The file contains a space separated table
+    of values for nodes, collisions, transmissions and total energy spent. The
+    data file can be easily plotted using e.g. gnuplot.
 """
 
 import simpy
@@ -36,7 +38,7 @@ import re
 import matplotlib.pyplot as plt
 import os
 import operator
-import csv
+
 # turn on/off graphics
 graphics = 0
 
@@ -343,8 +345,8 @@ class myNode():
         self.rxtime = 0
         self.x = 0
         self.y = 0
-        self.uplink = [["Node "+str(nodeid)],["Time", "SF", "Tx"]]
-        self.downlinkrcvd = [["Node "+str(nodeid)],["Time", "Rx Window"]]
+        self.uplink = []
+        self.downlinkrcvd = []
 
         # this is very complex prodecure for placing nodes
         # and ensure minimum distance between each pair of nodes
@@ -487,7 +489,7 @@ def transmit(env,node):
     while node.buffer > 0.0:
         node.packet.rssi = node.packet.txpow - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)
         # add maximum number of retransmissions
-        if (node.lstretans and node.lstretans <= 3):
+        if (node.lstretans and node.lstretans <= 8):
             node.first = 0
             node.buffer += PcktLength_SF[node.parameters.sf-7]
             # the randomization part (2 secs) to resove the collisions among retrasmissions
@@ -537,9 +539,8 @@ def transmit(env,node):
             node.packet.acked = 1
             # the packet can be acked
             # check if the ack is lost or not
-            #if((14 - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)) > sensi[12-7, 1]): # SF12 and Tx14
+            if((14 - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)) > sensi[12-7, 1]): # SF12 and Tx14
             # the ack is not lost
-            if((14 - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)) > sensi[node.packet.sf-7, [125,250,500].index(node.packet.bw) + 1]):
                 node.packet.acklost = 0
 
             else:
@@ -691,7 +692,7 @@ if (graphics == 1):
     plt.show()
 
 # start simulation
-env.run(until=8640)
+env.run()
 #env.run(until=simtime)
 
 # print stats and save into file
@@ -752,34 +753,15 @@ with open(fname, "a") as myfile:
     myfile.write(newres)
 myfile.close()
 
-tableUL = []
+import csv
 for node in nodes:
-  tableUL.append(node)
-
-if not os.path.isdir('results'):
-  os.mkdir('results')
-
-for node in nodes:
-  if not os.path.isdir('results/Node'+str(node.nodeid)):
-    os.mkdir('results/Node'+str(node.nodeid))
-  with open('results/Node'+str(node.nodeid)+'/info.csv', 'w') as csv_file:
-    csv_reader = csv.writer(csv_file)
-    numUplink = node.sent #len(node.uplink)
-    numRcvd = node.recv
-    numDownlink = len(node.downlinkrcvd)-2
-    DER = float(numRcvd)/float(numUplink)
-    distance = node.dist
-    csv_reader.writerow(["numUplink", "numRcvd", "numDownlink", "DER", "distance"])
-    csv_reader.writerow([numUplink, numRcvd, numDownlink, DER, distance])
-
-  with open('results/Node'+str(node.nodeid)+'/UL.csv', 'w') as csv_file:
+  with open('UL'+str(node.nodeid)+'.csv', 'w') as csv_file:
     csv_reader = csv.writer(csv_file)
     for transmission in node.uplink:
       csv_reader.writerow(transmission)
-
-  with open('results/Node'+str(node.nodeid)+'/DL.csv', 'w') as csv_file:
+  with open('DL'+str(node.nodeid)+'.csv', 'w') as csv_file:
     csv_reader = csv.writer(csv_file)
     for reception in node.downlinkrcvd:
       csv_reader.writerow(reception)
 
-#print "Finish"
+print "Finish"
