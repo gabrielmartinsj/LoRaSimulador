@@ -79,9 +79,9 @@ nearstACK1p = [0,0,0] # 3 channels with 1% duty cycle
 nearstACK10p = 0 # one channel with 10% duty cycle
 AckMessLen = 0
 #global ADR
-ADR = True
+ADR = False
 #global ADRtype
-ADRtype = "ADR-TTN"
+#ADRtype = "ADR-TTN"
 #
 # packet error model assumming independent Bernoulli
 #
@@ -483,10 +483,18 @@ class myPacket():
         self.acked = 0
         self.acklost = 0
 
-#def calculateADRatED(node):
-#    if node.counter > 64:
-#        if node.nexttxpow < 14:
-#            node.nexttxpow 
+def calculateADRatED(node):
+
+    if node.packet.acked == 0:
+        node.counter+=1
+    else:
+        node.counter = 0
+
+    if node.counter > 64:
+        if node.nexttxpow < 14:
+            node.nexttxpow += 2
+        elif node.nextsf < 12:
+            node.nextsf += 1
 
 def calculateADRatNS(node):
     #registerLastRSSIofPacket(node)
@@ -535,7 +543,9 @@ def calculateADRatNS(node):
 def transmit(env,node):
     while node.buffer > 0.0:
         node.packet.rssi = node.packet.txpow - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)
-
+        if ADR:
+            node.packet.sf = node.nextsf
+            node.packet.txpow = node.txpow
         if (node.lstretans and node.lstretans <= 8):
             node.first = 0
             node.buffer += PcktLength_SF[node.parameters.sf-7]
@@ -596,12 +606,12 @@ def transmit(env,node):
                 #node.packet.sf = node.nextsf
                 #node.packet.txpow = node.nexttxpow
                 calculateADRatNS(node)
-                #calculateADRatED(node)
+                calculateADRatED(node)
                 #TXdistribution[int(node.packet.txpow)-2]+=1
                 #SFdistribution[node.packet.sf-7]+=1
         else:
             node.packet.acked = 0
-            #calculateADRatED(node)
+            calculateADRatED(node)
         
         if node.packet.processed == 1:
             global nrProcessed
