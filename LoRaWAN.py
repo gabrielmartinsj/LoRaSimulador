@@ -78,7 +78,8 @@ LorawanHeader = 7
 nearstACK1p = [0,0,0] # 3 channels with 1% duty cycle
 nearstACK10p = 0 # one channel with 10% duty cycle
 AckMessLen = 0
-
+global ADR
+ADR = True
 #
 # packet error model assumming independent Bernoulli
 #
@@ -344,6 +345,8 @@ class myNode():
         self.x = 0
         self.y = 0
         self.last_rssi_at_BS = []
+        self.nextsf = 12
+        self.nexttxpow = 14
         # this is very complex prodecure for placing nodes
         # and ensure minimum distance between each pair of nodes
         found = 0
@@ -492,6 +495,8 @@ def registerLastRSSIofPacket(node):
 # is maintained
 #
 
+
+
 def transmit(env,node):
     while node.buffer > 0.0:
         node.packet.rssi = node.packet.txpow - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)
@@ -516,6 +521,10 @@ def transmit(env,node):
         if (node in packetsAtBS):
             print "ERROR: packet already in"
         else:
+            if ADR:
+                node.packet.sf = node.nextsf
+                node.packet.txpow = node.nexttxpow
+            #SF_in_use[node.packet.sf] += 1
             sensitivity = sensi[node.packet.sf - 7, [125,250,500].index(node.packet.bw) + 1]
             if node.packet.rssi < sensitivity:
                 print "node {}: packet will be lost".format(node.nodeid)
@@ -607,6 +616,9 @@ def transmit(env,node):
         node.packet.lost = False
         node.packet.acked = 0
         node.packet.acklost = 0
+        if ADR:
+            node.nextsf = 12
+            node.nexttxpow = 14
 
 #
 # "main" program
@@ -686,6 +698,9 @@ for i in range(0,nrNodes):
     nodes.append(node)
     node.parameters = assignParameters(node.nodeid, node.dist)
     node.packet = myPacket(node.nodeid, node.parameters.freq, node.parameters.sf, node.parameters.bw, node.parameters.cr, node.parameters.txpow, node.dist)
+    if ADR:
+        node.nextsf = node.packet.sf
+        node.nexttxpow = node.packet.txpow
     env.process(transmit(env,node))
 
 
@@ -767,4 +782,4 @@ if (graphics == 1):
 #         nfile.write("{} {} {}\n".format(n.x, n.y, n.nodeid))
 # with open('basestation.txt', 'w') as bfile:
 #     bfile.write("{} {} {}\n".format(bsx, bsy, 0)
-print nodes[0].last_rssi_at_BS
+print(SF_in_use)
