@@ -1,34 +1,10 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """
- An updated version of LoRaSim 0.2.1 to simulate collisions in confirmable
- LoRaWAN with a datasize target
- author: Khaled Abdelfadeel khaled.abdelfadeel@mycit.ie
+ An updated version of LoRaFree simulator by Khaled Abdelfadeel <khaled.abdelfadeel@mycit.ie> to include
+ ADR-TTN
+ Author: Gabriel Germino Martins de Jesus <gabrielgmj3@gmail.com>
 """
-
-"""
- SYNOPSIS:
-   ./confirmablelorawan.py <nodes> <avgsend> <datasize> <collision> <randomseed>
- DESCRIPTION:
-    nodes
-        number of nodes to simulate
-    avgsend
-        average sending interval in seconds
-    datasize
-        Size of data that each device sends in bytes
-    collision
-        0   simplified check. Two packets collide when they arrive at the same time, on the same frequency and SF
-        1   considers the capture effect
-        2   consider the Non-orthognality SFs effect and capture effect
-    randomseed
-        random seed
- OUTPUT
-    The result of every simulation run will be appended to a file named expX.dat,
-    whereby X is the experiment number. The file contains a space separated table
-    of values for nodes, collisions, transmissions and total energy spent. The
-    data file can be easily plotted using e.g. gnuplot.
-"""
-
 import simpy
 import random
 import numpy as np
@@ -152,7 +128,7 @@ def checkcollision(packet):
     return 0
 
 # check if the gateway can ack this packet at any of the receive windows
-# based on the duty cycle
+# based on the duy cycle
 def checkACK(packet):
     global  nearstACK1p
     global  nearstACK10p
@@ -165,7 +141,6 @@ def checkACK(packet):
         tempairtime = airtime(packet.sf, CodingRate, AckMessLen+LorawanHeader, Bandwidth)
         nearstACK1p[chanlindex] = timeofacking+(tempairtime/0.01)
         nodes[packet.nodeid].rxtime += tempairtime
-        nodes[packet.nodeid].downlinkrcvd.append([timeofacking, 1])
         return packet.acked
     else:
         # this packet can not be acked
@@ -182,7 +157,6 @@ def checkACK(packet):
         tempairtime = airtime(12, CodingRate, AckMessLen+LorawanHeader, Bandwidth)
         nearstACK10p = timeofacking+(tempairtime/0.1)
         nodes[packet.nodeid].rxtime += tempairtime
-        nodes[packet.nodeid].downlinkrcvd.append([timeofacking, 2])
         return packet.acked
     else:
         # this packet can not be acked
@@ -345,8 +319,6 @@ class myNode():
         self.rxtime = 0
         self.x = 0
         self.y = 0
-        self.uplink = []
-        self.downlinkrcvd = []
 
         # this is very complex prodecure for placing nodes
         # and ensure minimum distance between each pair of nodes
@@ -504,7 +476,6 @@ def transmit(env,node):
 
         # time sending and receiving
         # packet arrives -> add to base station
-        node.uplink.append([env.now, node.parameters.sf, node.parameters.txpow]) # Registers the time in which a node starts an uplink
         node.sent = node.sent + 1
         if (node in packetsAtBS):
             print "ERROR: packet already in"
@@ -539,13 +510,11 @@ def transmit(env,node):
             node.packet.acked = 1
             # the packet can be acked
             # check if the ack is lost or not
-            if((14 - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)) > sensi[12-7, 1]): # SF12 and Tx14
+            if((14 - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)) > sensi[node.packet.sf-7, [125,250,500].index(node.packet.bw) + 1]):
             # the ack is not lost
                 node.packet.acklost = 0
-
             else:
             # ack is lost
-                node.downlinkrcvd.pop()
                 node.packet.acklost = 1
         else:
             node.packet.acked = 0
@@ -753,15 +722,12 @@ with open(fname, "a") as myfile:
     myfile.write(newres)
 myfile.close()
 
-import csv
-for node in nodes:
-  with open('UL'+str(node.nodeid)+'.csv', 'w') as csv_file:
-    csv_reader = csv.writer(csv_file)
-    for transmission in node.uplink:
-      csv_reader.writerow(transmission)
-  with open('DL'+str(node.nodeid)+'.csv', 'w') as csv_file:
-    csv_reader = csv.writer(csv_file)
-    for reception in node.downlinkrcvd:
-      csv_reader.writerow(reception)
+# this can be done to keep graphics visible
+if (graphics == 1):
+    raw_input('Press Enter to continue ...')
 
-print "Finish"
+# with open('nodes.txt','w') as nfile:
+#     for n in nodes:
+#         nfile.write("{} {} {}\n".format(n.x, n.y, n.nodeid))
+# with open('basestation.txt', 'w') as bfile:
+#     bfile.write("{} {} {}\n".format(bsx, bsy, 0)
