@@ -81,7 +81,7 @@ AckMessLen = 0
 #global ADR
 ADR = False
 #global ADRtype
-#ADRtype = "ADR-TTN"
+ADRtype = "ADR-TTN"
 #
 # packet error model assumming independent Bernoulli
 #
@@ -351,6 +351,7 @@ class myNode():
         self.nexttxpow = 14
         self.margin_db = 10
         self.Nstep = []
+        self.counter = 0
         # this is very complex prodecure for placing nodes
         # and ensure minimum distance between each pair of nodes
         found = 0
@@ -509,27 +510,32 @@ def calculateADRatNS(node):
 
             #node.NstepCalc.append(Nstep)
 
-            node.nexttxpow = node.packet.txpow
-            node.nextsf = node.packet.sf
+            ADRtx = node.packet.txpow
+            ADRsf = node.packet.sf
             #node.Nstep.append([node.nextsf, node.nexttxpow])
 
             if Nstep < 0:
-                while(node.nexttxpow < 14 and Nstep < 0):
-                    node.nexttxpow += 2
+                while(ADRtx < 14 and Nstep < 0):
+                    ADRtx += 2
                     Nstep += 1
             elif Nstep > 0:
-                while(node.nextsf > 7 and Nstep > 0):
-                    node.nextsf -= 1
+                while(ADRsf > 7 and Nstep > 0):
+                    ADRsf -= 1
                     Nstep -= 1
-                while(node.nexttxpow > 2 and Nstep > 0):
-                    node.nexttxpow -= 2
+                while(ADRtx > 2 and Nstep > 0):
+                    ADRtx -= 2
                     Nstep -= 1
             else:
-                node.nexttxpow = node.packet.txpow
-                node.nextsf = node.packet.sf
+                ADRtx = node.packet.txpow
+                ADRsf = node.packet.sf
 
         node.last_rssi_at_BS = []
-
+        if node.packet.acked == 1:
+            node.nextsf = ADRtx
+            node.nexttxpow = ADRsf
+        else:
+            node.nextsf = node.packet.sf
+            node.nexttxpow = node.packet.txpow
     else:
         node.nextsf = node.packet.sf
         node.nexttxpow = node.packet.txpow
@@ -611,7 +617,9 @@ def transmit(env,node):
                 #SFdistribution[node.packet.sf-7]+=1
         else:
             node.packet.acked = 0
-            calculateADRatED(node)
+            if ADR:
+                calculateADRatED(node)
+                calculateADRatNS(node)
         
         if node.packet.processed == 1:
             global nrProcessed
@@ -668,7 +676,7 @@ def transmit(env,node):
         #if ADR:
         #    node.nextsf = 12
         #    node.nexttxpow = 14
-        calculateADRatNS(node)
+        #calculateADRatNS(node)
 
 #
 # "main" program
