@@ -724,11 +724,12 @@ nrLostError = 0
 nrNoACK = 0
 nrACKLost = 0
 
+# Petajäjärvi:ITST:2015
 Ptx = 9.75
-gamma = 2.08
-d0 = 40.0
-var = 2.0
-Lpld0 = 127.41
+gamma = 2.32 #2.08
+d0 = 1000 #40.0
+var = 7.8 #2.0
+Lpld0 = 128.95 #127.41
 GL = 0
 minsensi = np.amin(sensi[:,[125,250,500].index(Bandwidth) + 1])
 Lpl = Ptx - minsensi
