@@ -508,7 +508,7 @@ def calculateADRatNS(node):
     if len(node.last_rssi_at_BS) == 20:
 
         if ADRtype == "ADR-TTN":
-            SNRm = sum(node.last_rssi_at_BS)/len(node.last_rssi_at_BS)
+            SNRm = max(node.last_rssi_at_BS)#sum(node.last_rssi_at_BS)/len(node.last_rssi_at_BS)
             margin_db = node.margin_db
             radio_sensitivity = sensi[node.packet.sf - 7, [125,250,500].index(node.packet.bw) + 1]
             Nstep = int((SNRm - margin_db - radio_sensitivity)/3)
