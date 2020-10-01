@@ -156,10 +156,10 @@ def checkcollision(packet):
 
 # check if the gateway can ack this packet at any of the receive windows
 # based on the duy cycle
-def checkACK(node):
+def checkACK(packet):
     global  nearstACK1p
     global  nearstACK10p
-    packet= node.packet
+    #packet= node.packet
     # Only acks if necessary
     if len(node.last_rssi_at_BS) < 20 or node.counter < 32:
         packet.acked = 0
@@ -357,6 +357,7 @@ class myNode():
         self.margin_db = 10
         #self.Nstep = []
         self.counter = 0
+        self.fcounter = 0
         # this is very complex prodecure for placing nodes
         # and ensure minimum distance between each pair of nodes
         found = 0
@@ -503,12 +504,17 @@ def calculateADRatED(node):
             node.nextsf += 1
 
 def calculateADRatNS(node):
-    #registerLastRSSIofPacket(node)
-    node.last_rssi_at_BS.append(node.packet.rssi)
-    if len(node.last_rssi_at_BS) == 20:
+    # Only keeps the highest RSSI of the same packet
+    if node.fcounter == node.last_rssi_at_BS[-1][1]:
+        if node.last_rssi_at_BS[-1][0] < node.packet.rssi:
+            node.last_rssi_at_BS.pop()
 
+    #registerLastRSSIofPacket(node)
+    node.last_rssi_at_BS.append([node.packet.rssi, node.fcounter])
+    if len(node.last_rssi_at_BS) > 20
+    #    if node.packet.acked == 1:
         if ADRtype == "ADR-TTN":
-            SNRm = max(node.last_rssi_at_BS)#sum(node.last_rssi_at_BS)/len(node.last_rssi_at_BS)
+            SNRm = max([rssi[0] for rssi in node.last_rssi_at_BS])#sum(node.last_rssi_at_BS)/len(node.last_rssi_at_BS)
             margin_db = node.margin_db
             radio_sensitivity = sensi[node.packet.sf - 7, [125,250,500].index(node.packet.bw) + 1]
             Nstep = int((SNRm - margin_db - radio_sensitivity)/3)
@@ -542,6 +548,9 @@ def calculateADRatNS(node):
             node.nextsf = node.packet.sf
             node.nexttxpow = node.packet.txpow
     else:
+        while(len(node.last_rssi_at_BS) > 20):
+            node.last_rssi_at_BS.pop(0)
+    else:
         node.nextsf = node.packet.sf
         node.nexttxpow = node.packet.txpow
 
@@ -560,11 +569,14 @@ def transmit(env,node):
         if (node.lstretans and node.lstretans <= 8):
             node.first = 0
             node.buffer += PcktLength_SF[node.parameters.sf-7]
+            node.fcounter = node.fcounter
             # the randomization part (2 secs) to resove the collisions among retrasmissions
             yield env.timeout(max(2+airtime(12, CodingRate, AckMessLen+LorawanHeader, Bandwidth), float(node.packet.rectime*((1-0.01)/0.01)))+(random.expovariate(1.0/float(2000))/1000.0))
         else:
             node.first = 0
             node.lstretans = 0
+            node.fcounter += 1
+
             yield env.timeout(random.expovariate(1.0/float(node.period)))
 
         node.buffer -= PcktLength_SF[node.parameters.sf-7]
@@ -603,7 +615,7 @@ def transmit(env,node):
         if (node.packet.lost == 0\
                 and node.packet.perror == False\
                 and node.packet.collided == False\
-                and checkACK(node)):
+                and checkACK(node.packet)):
             node.packet.acked = 1
             # the packet can be acked
             # check if the ack is lost or not
