@@ -79,7 +79,7 @@ nearstACK1p = [0,0,0] # 3 channels with 1% duty cycle
 nearstACK10p = 0 # one channel with 10% duty cycle
 AckMessLen = 0
 #global ADR
-ADR = False
+ADR = True
 #global ADRtype
 ADRtype = "ADR-TTN"
 #
@@ -156,9 +156,14 @@ def checkcollision(packet):
 
 # check if the gateway can ack this packet at any of the receive windows
 # based on the duy cycle
-def checkACK(packet):
+def checkACK(node):
     global  nearstACK1p
     global  nearstACK10p
+    packet= node.packet
+    # Only acks if necessary
+    if len(node.last_rssi_at_BS) < 20 or node.counter < 32:
+        packet.acked = 0
+        return packet.acked
     # check ack in the first window
     chanlindex=[872000000, 864000000, 860000000].index(packet.freq)
     timeofacking = env.now + 1  # one sec after receiving the packet
@@ -350,7 +355,7 @@ class myNode():
         self.nextsf = 12
         self.nexttxpow = 14
         self.margin_db = 10
-        self.Nstep = []
+        #self.Nstep = []
         self.counter = 0
         # this is very complex prodecure for placing nodes
         # and ensure minimum distance between each pair of nodes
@@ -598,23 +603,21 @@ def transmit(env,node):
         if (node.packet.lost == 0\
                 and node.packet.perror == False\
                 and node.packet.collided == False\
-                and checkACK(node.packet)):
+                and checkACK(node)):
             node.packet.acked = 1
             # the packet can be acked
             # check if the ack is lost or not
             if((14 - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)) > sensi[node.packet.sf-7, [125,250,500].index(node.packet.bw) + 1]):
             # the ack is not lost
                 node.packet.acklost = 0
+                if ADR:
+                    # Calculate ADR considering that the ack is not lost.
+                    calculateADRatNS(node)
+                    calculateADRatED(node)
             else:
             # ack is lost
                 node.packet.acklost = 1
-            if ADR:
-                #node.packet.sf = node.nextsf
-                #node.packet.txpow = node.nexttxpow
-                calculateADRatNS(node)
-                calculateADRatED(node)
-                #TXdistribution[int(node.packet.txpow)-2]+=1
-                #SFdistribution[node.packet.sf-7]+=1
+
         else:
             node.packet.acked = 0
             if ADR:
