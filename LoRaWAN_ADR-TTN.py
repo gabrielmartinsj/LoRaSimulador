@@ -560,7 +560,7 @@ def calculateADRatNS(node):
 #
 
 def transmit(env,node):
-    while node.buffer > 0.0:
+    while node.buffer > 0.0: #or datasize == 0:
         node.packet.rssi = node.packet.txpow - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)
         if ADR:
             node.packet.sf = node.nextsf
@@ -710,13 +710,14 @@ if len(sys.argv) >= 6:
     datasize = int(sys.argv[3])
     full_collision = int(sys.argv[4])
     Rnd = random.seed(int(sys.argv[5]))
+    maxDist = float(sys.argv[6])
     print "Nodes:", nrNodes
     print "DataSize [bytes]", datasize
     print "AvgSendTime (exp. distributed):",avgSendTime
     print "Full Collision: ", full_collision
     print "Random Seed: ", int(sys.argv[5])
 else:
-    print "usage: ./confirmablelorawan <nodes> <avgsend> <datasize> <collision> <randomseed>"
+    print "usage: ./confirmablelorawan <nodes> <avgsend> <datasize> <collision> <randomseed> <maxDistToGateway>"
     exit(-1)
 
 # global stuff
@@ -754,14 +755,14 @@ Lpld0 = 128.95 #127.41
 GL = 0
 minsensi = np.amin(sensi[:,[125,250,500].index(Bandwidth) + 1])
 Lpl = Ptx - minsensi
-maxDist = 10000#d0*(10**((Lpl-Lpld0)/(10.0*gamma)))
+#maxDist = 10000#d0*(10**((Lpl-Lpld0)/(10.0*gamma)))
 print "maxDist:", maxDist
 
 # base station placement
-bsx = maxDist+10
-bsy = maxDist+10
-xmax = bsx + maxDist + 10
-ymax = bsy + maxDist + 10
+bsx = maxDist#+10
+bsy = maxDist#+10
+xmax = bsx + maxDist# + 10
+ymax = bsy + maxDist# + 10
 
 # prepare graphics and add sink
 if (graphics == 1):
@@ -794,6 +795,7 @@ if (graphics == 1):
 
 # start simulation
 env.run()
+#simtime = 100000
 #env.run(until=simtime)
 
 # print stats and save into file
@@ -869,3 +871,5 @@ if (graphics == 1):
 #for node in nodes:
 #    print node.last_rssi_at_BS
 #    print len(node.last_rssi_at_BS)
+for node in nodes:
+    print(node.dist)
