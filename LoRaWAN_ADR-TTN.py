@@ -159,11 +159,7 @@ def checkcollision(packet):
 def checkACK(packet):
     global  nearstACK1p
     global  nearstACK10p
-    #packet= node.packet
-    # Only acks if necessary
-    if len(node.last_rssi_at_BS) < 20 or node.counter < 32:
-        packet.acked = 0
-        return packet.acked
+
     # check ack in the first window
     chanlindex=[872000000, 864000000, 860000000].index(packet.freq)
     timeofacking = env.now + 1  # one sec after receiving the packet
@@ -354,10 +350,11 @@ class myNode():
         self.last_rssi_at_BS = []
         self.nextsf = 12
         self.nexttxpow = 14
-        self.margin_db = 10
+        self.margin_db = 20
         #self.Nstep = []
-        self.counter = 0
-        self.fcounter = 0
+        self.counter = [0,0]
+        self.fcounter = -1
+        self.lastfcount = -1
         # this is very complex prodecure for placing nodes
         # and ensure minimum distance between each pair of nodes
         found = 0
@@ -390,7 +387,7 @@ class myNode():
         self.dist = np.sqrt((self.x-bsx)*(self.x-bsx)+(self.y-bsy)*(self.y-bsy))
         print('node %d' %nodeid, "x", self.x, "y", self.y, "dist: ", self.dist)
 
-        self.txpow = 0
+        self.txpow = 2
 
         # graphics for node
         global graphics
@@ -412,7 +409,7 @@ class assignParameters():
         self.txpow = 2
         self.bw = Bandwidth
         self.cr = CodingRate
-        self.sf = 12
+        self.sf = 8
         self.rectime = airtime(self.sf, self.cr, LorawanHeader+PcktLength_SF[self.sf-7], self.bw)
         self.freq = random.choice([872000000, 864000000, 860000000])
 
@@ -436,7 +433,7 @@ class assignParameters():
         if (minsf != 0):
             self.rectime = minairtime
             self.sf = minsf
-        self.sf = 12
+        self.sf = 8
         # SF, BW, CR and PWR distributions
         print "bw", self.bw, "sf", self.sf, "cr", self.cr
         global SFdistribution, CRdistribution, TXdistribution, BWdistribution
@@ -493,11 +490,12 @@ class myPacket():
 def calculateADRatED(node):
 
     if node.packet.acked == 0:
-        node.counter+=1
+        node.counter[1]+=1
     else:
-        node.counter = 0
+        node.counter = [0,0]
 
-    if node.counter > 64:
+    if node.counter == [0, 64] or node.counter == [1,32]:
+        node.counter = [1, 0]
         if node.nexttxpow < 14:
             node.nexttxpow += 2
         elif node.nextsf < 12:
@@ -505,13 +503,14 @@ def calculateADRatED(node):
 
 def calculateADRatNS(node):
     # Only keeps the highest RSSI of the same packet
-    if node.fcounter == node.last_rssi_at_BS[-1][1]:
+    if len(node.last_rssi_at_BS) !=0 and node.fcounter == node.last_rssi_at_BS[-1][1]:
         if node.last_rssi_at_BS[-1][0] < node.packet.rssi:
-            node.last_rssi_at_BS.pop()
+            node.last_rssi_at_BS[-1] = [node.packet.rssi, node.fcounter, node.packet.sf, node.packet.txpow]
+    else:       
+        node.last_rssi_at_BS.append([node.packet.rssi, node.fcounter, node.packet.sf, node.packet.txpow])
+        node.recv += 1
 
-    #registerLastRSSIofPacket(node)
-    node.last_rssi_at_BS.append([node.packet.rssi, node.fcounter])
-    if len(node.last_rssi_at_BS) > 20
+    if len(node.last_rssi_at_BS) > 20:
     #    if node.packet.acked == 1:
         if ADRtype == "ADR-TTN":
             SNRm = max([rssi[0] for rssi in node.last_rssi_at_BS])#sum(node.last_rssi_at_BS)/len(node.last_rssi_at_BS)
@@ -539,20 +538,20 @@ def calculateADRatNS(node):
             else:
                 ADRtx = node.packet.txpow
                 ADRsf = node.packet.sf
-
+    
         node.last_rssi_at_BS = []
         if node.packet.acked == 1:
-            node.nextsf = ADRtx
-            node.nexttxpow = ADRsf
+            node.nextsf = ADRsf
+            node.nexttxpow = ADRtx
         else:
             node.nextsf = node.packet.sf
-            node.nexttxpow = node.packet.txpow
-    else:
-        while(len(node.last_rssi_at_BS) > 20):
-            node.last_rssi_at_BS.pop(0)
+            node.txpow = node.packet.txpow
+    #else:
+    #    while(len(node.last_rssi_at_BS) > 20):
+    #        node.last_rssi_at_BS.pop(0)
     else:
         node.nextsf = node.packet.sf
-        node.nexttxpow = node.packet.txpow
+        node.txpow = node.packet.txpow
 
 #
 # main discrete event loop, runs for each node
@@ -565,17 +564,19 @@ def transmit(env,node):
         node.packet.rssi = node.packet.txpow - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)
         if ADR:
             node.packet.sf = node.nextsf
-            node.packet.txpow = node.txpow
+            node.packet.txpow = node.nexttxpow
         if (node.lstretans and node.lstretans <= 8):
             node.first = 0
             node.buffer += PcktLength_SF[node.parameters.sf-7]
-            node.fcounter = node.fcounter
+            #node.fcounter = node.fcounter
+
             # the randomization part (2 secs) to resove the collisions among retrasmissions
             yield env.timeout(max(2+airtime(12, CodingRate, AckMessLen+LorawanHeader, Bandwidth), float(node.packet.rectime*((1-0.01)/0.01)))+(random.expovariate(1.0/float(2000))/1000.0))
         else:
             node.first = 0
             node.lstretans = 0
             node.fcounter += 1
+            node.sent = node.sent + 1
 
             yield env.timeout(random.expovariate(1.0/float(node.period)))
 
@@ -584,7 +585,6 @@ def transmit(env,node):
 
         # time sending and receiving
         # packet arrives -> add to base station
-        node.sent = node.sent + 1
         if (node in packetsAtBS):
             print "ERROR: packet already in"
         else:
@@ -632,9 +632,13 @@ def transmit(env,node):
 
         else:
             node.packet.acked = 0
-            if ADR:
-                calculateADRatED(node)
+            if (node.packet.lost == 0\
+                and node.packet.perror == False\
+                and node.packet.collided == False\
+                and not checkACK(node.packet)\
+                and ADR):
                 calculateADRatNS(node)
+            calculateADRatED(node)
         
         if node.packet.processed == 1:
             global nrProcessed
@@ -658,7 +662,14 @@ def transmit(env,node):
             node.lstretans += 1
             global nrCollisions
             nrCollisions = nrCollisions +1
-        elif node.packet.acked == 0:
+        else:
+            if node.fcounter > node.lastfcount:
+                #node.recv += 1
+                node.lstretans = 0
+                global nrReceived
+                nrReceived = nrReceived + 1
+
+        if node.packet.acked == 0:
             #node.buffer += PcktLength_SF[node.parameters.sf-7]
             print "node {0.nodeid} buffer {0.buffer} bytes".format(node)
             node.noack = node.noack + 1
@@ -672,12 +683,6 @@ def transmit(env,node):
             node.lstretans += 1
             global nrACKLost
             nrACKLost += 1
-        else:
-            node.recv = node.recv + 1
-            node.lstretans = 0
-            global nrReceived
-            nrReceived = nrReceived + 1
-
         # complete packet has been received by base station
         # can remove it
         if (node in packetsAtBS):
@@ -688,6 +693,7 @@ def transmit(env,node):
         node.packet.lost = False
         node.packet.acked = 0
         node.packet.acklost = 0
+        node.lastfcount = node.fcounter
         #if ADR:
         #    node.nextsf = 12
         #    node.nexttxpow = 14
@@ -748,7 +754,7 @@ Lpld0 = 128.95 #127.41
 GL = 0
 minsensi = np.amin(sensi[:,[125,250,500].index(Bandwidth) + 1])
 Lpl = Ptx - minsensi
-maxDist = d0*(10**((Lpl-Lpld0)/(10.0*gamma)))
+maxDist = 10000#d0*(10**((Lpl-Lpld0)/(10.0*gamma)))
 print "maxDist:", maxDist
 
 # base station placement
@@ -771,10 +777,11 @@ for i in range(0,nrNodes):
     node = myNode(i,bsId, avgSendTime, datasize)
     nodes.append(node)
     node.parameters = assignParameters(node.nodeid, node.dist)
+    
     node.packet = myPacket(node.nodeid, node.parameters.freq, node.parameters.sf, node.parameters.bw, node.parameters.cr, node.parameters.txpow, node.dist)
     if ADR:
-        node.nextsf = node.packet.sf
-        node.nexttxpow = node.packet.txpow
+        node.packet.sf = node.nextsf
+        node.packet.txpow = node.nexttxpow
     env.process(transmit(env,node))
 
 
@@ -801,6 +808,7 @@ TX = [22, 22, 22, 23,                                      # RFO/PA0: -2..1
 RX = 16
 V = 3.0     # voltage XXX
 sent = sum(n.sent for n in nodes)
+rcvd = sum(n.recv for n in nodes)
 energy = sum(((node.packet.rectime * node.sent * TX[int(node.packet.txpow)+2])+(node.rxtime * RX)) * V  for node in nodes)  / 1e3
 
 print "energy (in J): ", energy
@@ -814,7 +822,7 @@ print "NoACK packets: ", nrNoACK
 # data extraction rate
 der1 = (sent-nrCollisions)/float(sent) if sent!=0 else 0
 print "DER:", der1
-der2 = (nrReceived)/float(sent) if sent!=0 else 0
+der2 = (rcvd)/float(sent) if sent!=0 else 0
 print "DER method 2:", der2
 
 # data extraction rate per node
@@ -858,3 +866,6 @@ if (graphics == 1):
 #         nfile.write("{} {} {}\n".format(n.x, n.y, n.nodeid))
 # with open('basestation.txt', 'w') as bfile:
 #     bfile.write("{} {} {}\n".format(bsx, bsy, 0)
+#for node in nodes:
+#    print node.last_rssi_at_BS
+#    print len(node.last_rssi_at_BS)
