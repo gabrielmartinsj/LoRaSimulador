@@ -548,7 +548,9 @@ def calculateADRatNS(node):
 
 def transmit(env,node):
     while node.buffer > 0.0:
-        node.packet.rssi = node.packet.txpow - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)
+        h = np.random.rayleigh()
+        rssi_linear = h**2*dBm_to_lin(node.packet.txpow - Lpld0 - 10*gamma*math.log10(node.dist/d0)) #- np.random.normal(-var, var)
+        node.packet.rssi = lin_to_dBm(rssi_linear)
         if ADR:
             node.packet.sf = node.nextsf
             node.packet.txpow = node.txpow

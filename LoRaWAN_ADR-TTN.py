@@ -102,6 +102,15 @@ def per(sf,bw,cr,rssi,pl):
     snr = rssi  +174 - 10*math.log10(bw) - 6
     return 1 - (1 - ber_reynders_snr(snr, sf, bw, cr))**(pl*8)
 
+
+def dBm_to_lin(value):
+    linear_value = 1e-3*10**(value/10)
+    return linear_value
+
+def lin_to_dBm(value):
+    dBm_value = 10*np.log10(value/1e-3)
+    return dBm_value
+
 #
 # check for collisions at base station
 # Note: called before a packet (or rather node) is inserted into the list
@@ -413,7 +422,7 @@ class assignParameters():
         self.rectime = airtime(self.sf, self.cr, LorawanHeader+PcktLength_SF[self.sf-7], self.bw)
         self.freq = random.choice([872000000, 864000000, 860000000])
 
-        Prx = self.txpow  ## zero path loss by default
+"""        Prx = self.txpow  ## zero path loss by default
         # log-shadow
         Lpl = Lpld0 + 10*gamma*math.log10(distance/d0) + var
         print "Lpl:", Lpl
@@ -432,7 +441,7 @@ class assignParameters():
         print "best sf:", minsf, " best bw: ", minbw, "best airtime:", minairtime
         if (minsf != 0):
             self.rectime = minairtime
-            self.sf = minsf
+            self.sf = minsf"""
         self.sf = 8
         # SF, BW, CR and PWR distributions
         print "bw", self.bw, "sf", self.sf, "cr", self.cr
@@ -561,7 +570,10 @@ def calculateADRatNS(node):
 
 def transmit(env,node):
     while node.buffer > 0.0: #or datasize == 0:
-        node.packet.rssi = node.packet.txpow - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)
+        # Rayleigh fading model
+        h = np.random.rayleigh()
+        rssi_linear = h**2*dBm_to_lin(node.packet.txpow - Lpld0 - 10*gamma*math.log10(node.dist/d0)) #- np.random.normal(-var, var)
+        node.packet.rssi = lin_to_dBm(rssi_linear)
         if ADR:
             node.packet.sf = node.nextsf
             node.packet.txpow = node.nexttxpow
