@@ -539,7 +539,7 @@ def calculateADRatNS(node):
                 ADRtx = node.packet.txpow
                 ADRsf = node.packet.sf
     
-        node.last_rssi_at_BS = []
+        node.last_rssi_at_BS = [[node.packet.rssi, node.fcounter, node.packet.sf, node.packet.txpow]]
         if node.packet.acked == 1:
             node.nextsf = ADRsf
             node.nexttxpow = ADRtx
