@@ -99,7 +99,7 @@ def ber_reynders_snr(snr, sf, bw, cr):
     return ber_reynders(eb_no, sf)
 
 def per(sf,bw,cr,rssi,pl):
-    snr = rssi  +174 - 10*math.log10(bw) - 6
+    snr = rssi + 174 - 10*math.log10(bw) - 6
     return 1 - (1 - ber_reynders_snr(snr, sf, bw, cr))**(pl*8)
 
 
@@ -359,8 +359,8 @@ class myNode():
         self.last_rssi_at_BS = []
         self.nextsf = 12
         self.nexttxpow = 14
-        self.margin_db = 20
-        #self.Nstep = []
+        self.margin_db = 10
+        self.Nstep = []
         self.counter = [0,0]
         self.fcounter = -1
         self.lastfcount = -1
@@ -396,7 +396,7 @@ class myNode():
         self.dist = np.sqrt((self.x-bsx)*(self.x-bsx)+(self.y-bsy)*(self.y-bsy))
         print('node %d' %nodeid, "x", self.x, "y", self.y, "dist: ", self.dist)
 
-        self.txpow = 2
+        self.txpow = 14
 
         # graphics for node
         global graphics
@@ -415,14 +415,14 @@ class assignParameters():
         global GL
 
         self.nodeid = nodeid
-        self.txpow = 2
+        self.txpow = 14
         self.bw = Bandwidth
         self.cr = CodingRate
-        self.sf = 8
+        self.sf = 7
         self.rectime = airtime(self.sf, self.cr, LorawanHeader+PcktLength_SF[self.sf-7], self.bw)
         self.freq = random.choice([872000000, 864000000, 860000000])
 
-"""        Prx = self.txpow  ## zero path loss by default
+        Prx = self.txpow  ## zero path loss by default
         # log-shadow
         Lpl = Lpld0 + 10*gamma*math.log10(distance/d0) + var
         print "Lpl:", Lpl
@@ -441,8 +441,9 @@ class assignParameters():
         print "best sf:", minsf, " best bw: ", minbw, "best airtime:", minairtime
         if (minsf != 0):
             self.rectime = minairtime
-            self.sf = minsf"""
-        self.sf = 8
+            self.sf = minsf
+            
+        self.sf = 7
         # SF, BW, CR and PWR distributions
         print "bw", self.bw, "sf", self.sf, "cr", self.cr
         global SFdistribution, CRdistribution, TXdistribution, BWdistribution
@@ -512,6 +513,8 @@ def calculateADRatED(node):
 
 def calculateADRatNS(node):
     # Only keeps the highest RSSI of the same packet
+    required_SNR = [7.5, -10, -12.5, -15, -17.5, -20]
+
     if len(node.last_rssi_at_BS) !=0 and node.fcounter == node.last_rssi_at_BS[-1][1]:
         if node.last_rssi_at_BS[-1][0] < node.packet.rssi:
             node.last_rssi_at_BS[-1] = [node.packet.rssi, node.fcounter, node.packet.sf, node.packet.txpow]
@@ -522,16 +525,17 @@ def calculateADRatNS(node):
     if len(node.last_rssi_at_BS) > 20:
     #    if node.packet.acked == 1:
         if ADRtype == "ADR-TTN":
-            SNRm = max([rssi[0] for rssi in node.last_rssi_at_BS])#sum(node.last_rssi_at_BS)/len(node.last_rssi_at_BS)
+            SNR = [rssi[0]+174 - 10*math.log10(125e3) - 6 for rssi in node.last_rssi_at_BS]
+            SNRm = max(SNR)#sum(node.last_rssi_at_BS)/len(node.last_rssi_at_BS)
             margin_db = node.margin_db
-            radio_sensitivity = sensi[node.packet.sf - 7, [125,250,500].index(node.packet.bw) + 1]
+            radio_sensitivity = required_SNR[node.packet.sf-7]#sensi[node.packet.sf - 7, 1]
             Nstep = int((SNRm - margin_db - radio_sensitivity)/3)
 
             #node.NstepCalc.append(Nstep)
 
             ADRtx = node.packet.txpow
             ADRsf = node.packet.sf
-            #node.Nstep.append([node.nextsf, node.nexttxpow])
+            node.Nstep.append(SNRm)
 
             if Nstep < 0:
                 while(ADRtx < 14 and Nstep < 0):
@@ -567,17 +571,19 @@ def calculateADRatNS(node):
 # a global list of packet being processed at the gateway
 # is maintained
 #
-
+#global final_rssi
+#final_rssi = []
 def transmit(env,node):
     while node.buffer > 0.0: #or datasize == 0:
         # Rayleigh fading model
         h = np.random.rayleigh()
         rssi_linear = h**2*dBm_to_lin(node.packet.txpow - Lpld0 - 10*gamma*math.log10(node.dist/d0)) #- np.random.normal(-var, var)
         node.packet.rssi = lin_to_dBm(rssi_linear)
+        #final_rssi.append(node.packet.rssi)
         if ADR:
             node.packet.sf = node.nextsf
             node.packet.txpow = node.nexttxpow
-        if (node.lstretans and node.lstretans <= 8):
+        if (node.lstretans and node.lstretans <= 0):
             node.first = 0
             node.buffer += PcktLength_SF[node.parameters.sf-7]
             #node.fcounter = node.fcounter
@@ -601,7 +607,7 @@ def transmit(env,node):
             print "ERROR: packet already in"
         else:
             #SF_in_use[node.packet.sf] += 1
-            sensitivity = sensi[node.packet.sf - 7, [125,250,500].index(node.packet.bw) + 1]
+            sensitivity = sensi[node.packet.sf - 7, 1]
             if node.packet.rssi < sensitivity:
                 print "node {}: packet will be lost".format(node.nodeid)
                 node.packet.lost = True
@@ -884,4 +890,4 @@ if (graphics == 1):
 #    print node.last_rssi_at_BS
 #    print len(node.last_rssi_at_BS)
 for node in nodes:
-    print(node.dist)
+    print(node.Nstep)
