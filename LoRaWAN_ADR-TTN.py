@@ -38,6 +38,7 @@ import re
 import matplotlib.pyplot as plt
 import os
 import operator
+import csv
 
 # turn on/off graphics
 graphics = 0
@@ -359,11 +360,12 @@ class myNode():
         self.last_rssi_at_BS = []
         self.nextsf = 12
         self.nexttxpow = 14
-        self.margin_db = 10
+        self.margin_db = 10.0
         self.Nstep = []
         self.counter = [0,0]
         self.fcounter = -1
         self.lastfcount = -1
+        self.snr = []
         # this is very complex prodecure for placing nodes
         # and ensure minimum distance between each pair of nodes
         found = 0
@@ -418,9 +420,9 @@ class assignParameters():
         self.txpow = 14
         self.bw = Bandwidth
         self.cr = CodingRate
-        self.sf = 7
+        self.sf = 12
         self.rectime = airtime(self.sf, self.cr, LorawanHeader+PcktLength_SF[self.sf-7], self.bw)
-        self.freq = random.choice([872000000, 864000000, 860000000])
+        self.freq = 864000000#random.choice([872000000, 864000000, 860000000])
 
         Prx = self.txpow  ## zero path loss by default
         # log-shadow
@@ -443,7 +445,7 @@ class assignParameters():
             self.rectime = minairtime
             self.sf = minsf
             
-        self.sf = 7
+        self.sf = 12
         # SF, BW, CR and PWR distributions
         print "bw", self.bw, "sf", self.sf, "cr", self.cr
         global SFdistribution, CRdistribution, TXdistribution, BWdistribution
@@ -513,20 +515,25 @@ def calculateADRatED(node):
 
 def calculateADRatNS(node):
     # Only keeps the highest RSSI of the same packet
-    required_SNR = [7.5, -10, -12.5, -15, -17.5, -20]
+    required_SNR = [-7.5, -10, -12.5, -15, -17.5, -20]
 
     if len(node.last_rssi_at_BS) !=0 and node.fcounter == node.last_rssi_at_BS[-1][1]:
         if node.last_rssi_at_BS[-1][0] < node.packet.rssi:
             node.last_rssi_at_BS[-1] = [node.packet.rssi, node.fcounter, node.packet.sf, node.packet.txpow]
     else:       
         node.last_rssi_at_BS.append([node.packet.rssi, node.fcounter, node.packet.sf, node.packet.txpow])
-        node.recv += 1
+        if(node.buffer > datasize/2):
+            node.recv += 1
 
     if len(node.last_rssi_at_BS) > 20:
+        while len(node.last_rssi_at_BS) > 20:
+            node.last_rssi_at_BS.pop(0)
     #    if node.packet.acked == 1:
         if ADRtype == "ADR-TTN":
-            SNR = [rssi[0]+174 - 10*math.log10(125e3) - 6 for rssi in node.last_rssi_at_BS]
+            SNR = [rssi[0]+174 - 10*math.log10(125e3) for rssi in node.last_rssi_at_BS]
+
             SNRm = max(SNR)#sum(node.last_rssi_at_BS)/len(node.last_rssi_at_BS)
+            node.snr.append(SNRm)
             margin_db = node.margin_db
             radio_sensitivity = required_SNR[node.packet.sf-7]#sensi[node.packet.sf - 7, 1]
             Nstep = int((SNRm - margin_db - radio_sensitivity)/3)
@@ -580,9 +587,7 @@ def transmit(env,node):
         rssi_linear = h**2*dBm_to_lin(node.packet.txpow - Lpld0 - 10*gamma*math.log10(node.dist/d0)) #- np.random.normal(-var, var)
         node.packet.rssi = lin_to_dBm(rssi_linear)
         #final_rssi.append(node.packet.rssi)
-        if ADR:
-            node.packet.sf = node.nextsf
-            node.packet.txpow = node.nexttxpow
+
         if (node.lstretans and node.lstretans <= 0):
             node.first = 0
             node.buffer += PcktLength_SF[node.parameters.sf-7]
@@ -594,7 +599,8 @@ def transmit(env,node):
             node.first = 0
             node.lstretans = 0
             node.fcounter += 1
-            node.sent = node.sent + 1
+            if node.buffer > datasize/2:
+                node.sent += 1
 
             yield env.timeout(random.expovariate(1.0/float(node.period)))
 
@@ -630,14 +636,17 @@ def transmit(env,node):
 
         yield env.timeout(node.packet.rectime)
 
-        if (node.packet.lost == 0\
+        if (node.packet.lost == False\
                 and node.packet.perror == False\
                 and node.packet.collided == False\
                 and checkACK(node.packet)):
             node.packet.acked = 1
             # the packet can be acked
             # check if the ack is lost or not
-            if((14 - Lpld0 - 10*gamma*math.log10(node.dist/d0) - np.random.normal(-var, var)) > sensi[node.packet.sf-7, [125,250,500].index(node.packet.bw) + 1]):
+            h = np.random.rayleigh()
+            rssi_linear = h**2*dBm_to_lin(14 - Lpld0 - 10*gamma*math.log10(node.dist/d0)) #- np.random.normal(-var, var)
+            rssidBm = lin_to_dBm(rssi_linear)
+            if(rssidBm > sensi[node.packet.sf-7, 1]):
             # the ack is not lost
                 node.packet.acklost = 0
                 if ADR:
@@ -665,7 +674,7 @@ def transmit(env,node):
             #node.buffer += PcktLength_SF[node.parameters.sf-7]
             print "node {0.nodeid} buffer {0.buffer} bytes".format(node)
             node.lost = node.lost + 1
-            node.lstretans += 1
+            #node.lstretans += 1
             global nrLost
             nrLost += 1
         elif node.packet.perror:
@@ -712,6 +721,9 @@ def transmit(env,node):
         node.packet.acked = 0
         node.packet.acklost = 0
         node.lastfcount = node.fcounter
+        if ADR:
+            node.packet.sf = node.nextsf
+            node.packet.txpow = node.nexttxpow
         #if ADR:
         #    node.nextsf = 12
         #    node.nexttxpow = 14
@@ -880,14 +892,3 @@ myfile.close()
 # this can be done to keep graphics visible
 if (graphics == 1):
     raw_input('Press Enter to continue ...')
-#print nodes[0].last_rssi_at_BS == nodes[1].last_rssi_at_BS
-# with open('nodes.txt','w') as nfile:
-#     for n in nodes:
-#         nfile.write("{} {} {}\n".format(n.x, n.y, n.nodeid))
-# with open('basestation.txt', 'w') as bfile:
-#     bfile.write("{} {} {}\n".format(bsx, bsy, 0)
-#for node in nodes:
-#    print node.last_rssi_at_BS
-#    print len(node.last_rssi_at_BS)
-for node in nodes:
-    print(node.Nstep)
