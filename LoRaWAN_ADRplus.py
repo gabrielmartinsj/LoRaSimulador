@@ -360,7 +360,7 @@ class myNode():
         self.last_rssi_at_BS = []
         self.nextsf = 12
         self.nexttxpow = 14
-        self.margin_db = 10.0
+        self.margin_db = 10
         self.Nstep = []
         self.counter = [0,0]
         self.fcounter = -1
@@ -898,3 +898,11 @@ myfile.close()
 # this can be done to keep graphics visible
 if (graphics == 1):
     raw_input('Press Enter to continue ...')
+
+margins = []
+for node in nodes:
+    #print(node.margin_db)
+    margins.append(node.nextsf)
+
+plt.hist(margins)
+plt.savefig("Teste.png")

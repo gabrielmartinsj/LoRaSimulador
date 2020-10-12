@@ -8,7 +8,7 @@
 
 """
  SYNOPSIS:
-   ./confirmablelorawan.py <nodes> <avgsend> <datasize> <collision> <randomseed>
+   ./confirmablelorawan.py <nodes> <avgsend> <datasize> <collision> <randomseed> <maxdist>
  DESCRIPTION:
     nodes
         number of nodes to simulate
@@ -365,6 +365,7 @@ class myNode():
         self.counter = [0,0]
         self.fcounter = -1
         self.lastfcount = -1
+        self.last_count = []
         self.DER_inst = []
         self.DER_ref = 0.8
         # this is very complex prodecure for placing nodes
@@ -514,12 +515,10 @@ def calculateADRatED(node):
         elif node.nextsf < 12:
             node.nextsf += 1
 
-def newMargindB(node):
-    rssi = node.last_rssi_at_BS
-    der_ref = node.DER_ref
+def newMargindB(node, DER_inst):
     margin = node.margin_db
-    DER_inst = float(len(rssi))/float(rssi[-1][1] - rssi[0][1] + 1)
     node.DER_inst.append(DER_inst)
+    der_ref = node.DER_ref
     if DER_inst < der_ref:
         margin += 5
         if margin > 30:
@@ -544,28 +543,27 @@ def calculateADRatNS(node):
         12: -20
         }
 
-    #if len(node.last_rssi_at_BS) !=0 and node.fcounter == node.last_rssi_at_BS[-1][1]:
-    #    if node.last_rssi_at_BS[-1][0] < node.packet.rssi:
-    #        node.last_rssi_at_BS[-1] = [node.packet.rssi, node.fcounter, node.packet.sf, node.packet.txpow]
-    #else:       
-    node.last_rssi_at_BS.append([node.packet.rssi, node.fcounter, node.packet.sf, node.packet.txpow])
+    node.last_rssi_at_BS.append(node.packet.rssi)
+    node.last_count.append(node.fcounter)
+    #node.last_transmit_power([node.packet.sf, node.packet.txpow])
     if(node.buffer > datasize/2):
         node.recv += 1
 
-    if len(node.last_rssi_at_BS) > 20:
+    if len(node.last_rssi_at_BS) == 20:
         #while len(node.last_rssi_at_BS) > 20:
         #    node.last_rssi_at_BS.pop(0)
-    #    if node.packet.acked == 1:
+       #if node.packet.acked == 1:
         if ADRtype == "ADRx":
-            SNR = [rssi[0] + 174 - 10*math.log10(125e3) for rssi in node.last_rssi_at_BS]
-
-            SNRm = np.average(SNR)#sum(node.last_rssi_at_BS)/len(node.last_rssi_at_BS)
-            #node.snr.append(SNRm)
-            node.margin_db = newMargindB(node)
+            SNR = [rssi + 174 - 10*math.log10(125e3) for rssi in node.last_rssi_at_BS]
+            SNRm = np.average(SNR)
+            der_ref = node.DER_ref
+            DER_inst = 20.0/float(node.last_count[-1] - node.last_count[0] + 1)
+            print node.last_count
+            node.margin_db = newMargindB(node, DER_inst)
 
             margin_db = node.margin_db
             #required_SNR_ = required_SNR[node.packet.sf-7]#sensi[node.packet.sf - 7, 1]
-            Nstep = int((SNRm -required_SNR[node.packet.sf] - margin_db)/3)
+            Nstep = int((SNRm - required_SNR[node.packet.sf] - margin_db)/3)
 
             #node.NstepCalc.append(Nstep)
 
@@ -588,7 +586,8 @@ def calculateADRatNS(node):
                 ADRtx = node.packet.txpow
                 ADRsf = node.packet.sf
     
-        node.last_rssi_at_BS = [[node.packet.rssi, node.fcounter, node.packet.sf, node.packet.txpow]]
+        node.last_rssi_at_BS = [node.packet.rssi]#[[node.packet.rssi, node.fcounter, node.packet.sf, node.packet.txpow]]
+        node.last_count = [node.fcounter]
         if node.packet.acked == 1:
             node.nextsf = ADRsf
             node.nexttxpow = ADRtx
@@ -647,7 +646,6 @@ def transmit(env,node):
                 print "node {}: packet will be lost".format(node.nodeid)
                 node.packet.lost = True
             else:
-                node.packet.lost = False
                 if (per(node.packet.sf,node.packet.bw,node.packet.cr,node.packet.rssi,node.packet.pl) < random.uniform(0,1)):
                     # OK CRC
                     node.packet.perror = False
@@ -675,7 +673,7 @@ def transmit(env,node):
             h = np.random.rayleigh()
             rssi_linear = h**2*dBm_to_lin(14 - Lpld0 - 10*gamma*math.log10(node.dist/d0)) #- np.random.normal(-var, var)
             rssidBm = lin_to_dBm(rssi_linear)
-            if(rssidBm > sensi[node.packet.sf-7, 1]):
+            if(rssidBm >= sensi[node.packet.sf-7, 1]):
             # the ack is not lost
                 node.packet.acklost = 0
                 if ADR:
@@ -922,10 +920,19 @@ myfile.close()
 if (graphics == 1):
     raw_input('Press Enter to continue ...')
 
-print nodes[0].DER_inst#str(float(node.recv)/float(node.sent))
+#print nodes[0].DER_inst#str(float(node.recv)/float(node.sent))
 #print float(nodes[0].recv)/nodes[0].sent
-der = 0
+#der = 0
+#for node in nodes:
+#    der += node.nexttxpow#float(node.recv)/node.sent
+#    print(node.margin_db)
+#print(der/200)
+margins = []
+dist = []
 for node in nodes:
-    der += node.nexttxpow#float(node.recv)/node.sent
-    print(node.margin_db)
-print(der/200)
+    #print(node.margin_db)
+    margins.append(node.nextsf)
+    dist.append(node.dist)
+    print node.margin_db
+plt.scatter(dist, margins, alpha=0.5)
+plt.savefig("Teste.png")
