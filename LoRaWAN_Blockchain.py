@@ -161,7 +161,10 @@ def checkACK(packet):
     global  nearstACK10p
     # check ack in the first window
     chanlindex=[872000000, 864000000, 860000000].index(packet.freq)
-    timeofacking = env.now + 1  # one sec after receiving the packet
+    if env.now < nearstACK1p[chanlindex]:
+        timeofacking = nearstACK1p[chanlindex]#env.now + 1  # one sec after receiving the packet
+    else:
+        timeofacking = env.now
     if (timeofacking >= nearstACK1p[chanlindex]):
         # this packet can be acked
         packet.acked = 1
@@ -417,7 +420,7 @@ class assignParameters():
         global GL
 
         self.nodeid = nodeid
-        self.txpow = 2
+        self.txpow = 14
         self.bw = Bandwidth
         self.cr = CodingRate
         self.sf = 12
@@ -796,8 +799,13 @@ latency = []
 for node in nodes:
     for i in range(0, len(node.uplink)):
         if i in node.downlink:
-            latency.append(node.downlink[i] - node.uplink[i])
-    print(latency)
+            latency.append((node.downlink[i] - node.uplink[i]))
+from scipy.stats import norm
+latency.sort()
+y = norm.cdf(latency)#/len(latency)
+plt.plot(range(0, len(y)), y)
+print(y)
+plt.savefig("teste.png")
     #print "Uplink:"+str(node.uplink)
     #print "\n"
     #print "Downlink:"+str(node.downlink)
