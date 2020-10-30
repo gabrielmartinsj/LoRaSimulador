@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
  An updated version of LoRaFree simulator by Khaled Abdelfadeel <khaled.abdelfadeel@mycit.ie> to include
- ADR-TTN
+ ADR-TTN, ADR+ and ADRx
  Author: Gabriel Germino Martins de Jesus <gabrielgmj3@gmail.com>
 """
 
@@ -511,20 +511,16 @@ def newMargindB(node, DER_inst):
     margin = node.margin_db
     node.DER_inst.append(DER_inst)
     der_ref = node.DER_ref
-    if DER_inst < der_ref:
+    if DER_inst < der_ref and margin < 30:
         margin += 5
-        if margin > 30:
-            margin = 30
-    elif DER_inst >= der_ref*1.15:
+    elif DER_inst >= der_ref*1.15 and margin > 5:
         margin -= 2.5
-        if margin < 10:
-            margin = 10
     else:
         margin = margin
     
     return margin
 
-def calculateADRatNS(node):
+def calculateADRatNS(node): 
     # Only keeps the highest RSSI of the same packet
     required_SNR = {
         7: -7.5,
@@ -535,33 +531,26 @@ def calculateADRatNS(node):
         12: -20
         }
 
-    node.last_rssi_at_BS.append(node.packet.rssi)
+    node.last_rssi_at_BS.append(node.packet.rssi) #VOLTAR AUQI
     node.last_count.append(node.fcounter)
     #node.last_transmit_power([node.packet.sf, node.packet.txpow])
     if(node.buffer > datasize/2):
         node.recv += 1
 
     if len(node.last_rssi_at_BS) == 20:
-        #while len(node.last_rssi_at_BS) > 20:
-        #    node.last_rssi_at_BS.pop(0)
-       #if node.packet.acked == 1:
+
         if ADRtype == "ADRx":
             SNR = [rssi + 174 - 10*math.log10(125e3) for rssi in node.last_rssi_at_BS]
             SNRm = np.average(SNR)
-            der_ref = node.DER_ref
             DER_inst = 20.0/float(node.last_count[-1] - node.last_count[0] + 1)
-            print( node.last_count)
             node.margin_db = newMargindB(node, DER_inst)
 
             margin_db = node.margin_db
-            #required_SNR_ = required_SNR[node.packet.sf-7]#sensi[node.packet.sf - 7, 1]
-            Nstep = int((SNRm - required_SNR[node.packet.sf] - margin_db)/3)
+            Nstep = np.floor((SNRm - required_SNR[node.packet.sf] - margin_db)/3)
 
-            #node.NstepCalc.append(Nstep)
 
             ADRtx = node.packet.txpow
             ADRsf = node.packet.sf
-            #node.Nstep.append(SNRm)
 
             if Nstep < 0:
                 while(ADRtx < 14 and Nstep < 0):
@@ -578,7 +567,7 @@ def calculateADRatNS(node):
                 ADRtx = node.packet.txpow
                 ADRsf = node.packet.sf
     
-        node.last_rssi_at_BS = [node.packet.rssi]#[[node.packet.rssi, node.fcounter, node.packet.sf, node.packet.txpow]]
+        node.last_rssi_at_BS = [node.packet.rssi]
         node.last_count = [node.fcounter]
         if node.packet.acked == 1:
             node.nextsf = ADRsf
@@ -586,9 +575,7 @@ def calculateADRatNS(node):
         else:
             node.nextsf = node.packet.sf
             node.txpow = node.packet.txpow
-    #else:
-    #    while(len(node.last_rssi_at_BS) > 20):
-    #        node.last_rssi_at_BS.pop(0)
+
     else:
         node.nextsf = node.packet.sf
         node.txpow = node.packet.txpow
@@ -922,9 +909,9 @@ if (graphics == 1):
 margins = []
 dist = []
 for node in nodes:
-    #print(node.margin_db)
-    margins.append(node.nextsf)
+#    #print(node.margin_db)
+    margins.append(node.margin_db)
     dist.append(node.dist)
-    print (node.margin_db)
+#    print (node.margin_db)
 plt.scatter(dist, margins, alpha=0.5)
 plt.savefig("Teste.png")
