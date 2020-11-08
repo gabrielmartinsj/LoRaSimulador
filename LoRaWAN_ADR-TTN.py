@@ -371,30 +371,11 @@ class myNode():
         found = 0
         rounds = 0
         global nodes
-        while (found == 0 and rounds < 100):
-            a = random.random()
-            b = random.random()
-            if b<a:
-                a,b = b,a
-            posx = b*maxDist*math.cos(2*math.pi*a/b)+bsx
-            posy = b*maxDist*math.sin(2*math.pi*a/b)+bsy
-            if len(nodes) > 0:
-                for index, n in enumerate(nodes):
-                    dist = np.sqrt(((abs(n.x-posx))**2)+((abs(n.y-posy))**2))
-                    if dist >= 10:
-                        found = 1
-                        self.x = posx
-                        self.y = posy
-                    else:
-                        rounds = rounds + 1
-                        if rounds == 100:
-                            print( "could not place new node, giving up")
-                            exit(-1)
-            else:
-                print( "first node")
-                self.x = posx
-                self.y = posy
-                found = 1
+        r = random.uniform(0, maxDist)
+        theta = random.uniform(0, 2*math.pi)
+        self.x = r*math.cos(theta)
+        self.y = r*math.sin(theta)
+
         self.dist = np.sqrt((self.x-bsx)*(self.x-bsx)+(self.y-bsy)*(self.y-bsy))
         print('node %d' %nodeid, "x", self.x, "y", self.y, "dist: ", self.dist)
 
